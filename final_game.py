@@ -1,7 +1,7 @@
 import pygame as pg
 import math
 import cv2
-import numpy as np
+import mediapipe as mp
 
 pg.init()
 
@@ -18,8 +18,6 @@ pg.display.set_icon(icon)
 cart = pg.image.load("cart.png")
 cartX = 380
 cartY = 520
-movementX = 0
-move = 'right'
 
 plane = pg.image.load('plane.png')
 planeX = 0
@@ -37,7 +35,7 @@ mangoY2 = 0
 status2 = 'falling'
 
 score = 0
-life = 1000
+life = 3
 
 pg.mixer.music.load('main.mp3')
 pg.mixer.music.play(-1)
@@ -46,40 +44,21 @@ cam = cv2.VideoCapture(0)
 cam.set(3, 320)
 cam.set(4, 240)
 
-
-def nothing(yee):
-    pass
-
-
-# cv2.namedWindow("Colour picker")
-# cv2.createTrackbar("A", "Colour picker", 0, 180, nothing)
-# cv2.createTrackbar("B", "Colour picker", 67, 255, nothing)
-# cv2.createTrackbar("C", "Colour picker", 125, 255, nothing)
-# cv2.createTrackbar("D", "Colour picker", 22, 180, nothing)
-# cv2.createTrackbar("E", "Colour picker", 255, 255, nothing)
-# cv2.createTrackbar("F", "Colour picker", 255, 255, nothing)
-
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=1)
+mp_draw = mp.solutions.drawing_utils
 
 def collision():
     distance = math.sqrt(math.pow((cartX - mangoX), 2) + math.pow((cartY - mangoY), 2))
-    if distance < 45:
-        return True
-    else:
-        return False
-
+    return distance < 45
 
 def collision2():
     distance = math.sqrt(math.pow((cartX - mangoX2), 2) + math.pow((cartY - mangoY2), 2))
-    if distance < 45:
-        return True
-    else:
-        return False
-
+    return distance < 45
 
 paused_font = pg.font.Font("freesansbold.ttf", 70)
 guide_font = pg.font.Font("freesansbold.ttf", 55)
 score_font = pg.font.Font("freesansbold.ttf", 30)
-
 
 def pause():
     paused = True
@@ -103,46 +82,29 @@ def pause():
         window.blit(guide_message2, (230, 340))
         pg.display.update()
 
-
 running = True
 while running:
     window.blit(ground, (0, 0))
     display_score = score_font.render(f"Score: {score}", True, 'white', 'black')
     display_life = score_font.render(f"life: {life}", True, 'white', 'black')
 
-    _, frame = cam.read()
+    success, frame = cam.read()
+    if not success:
+        break
 
-    # a = cv2.getTrackbarPos("A", "Colour picker")
-    # b = cv2.getTrackbarPos("B", "Colour picker")
-    # c = cv2.getTrackbarPos("C", "Colour picker")
-    # d = cv2.getTrackbarPos("D", "Colour picker")
-    # e = cv2.getTrackbarPos("E", "Colour picker")
-    # f = cv2.getTrackbarPos("F", "Colour picker")
+    frame = cv2.flip(frame, 1)
 
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_red = np.array([47, 19, 107])
-    upper_red = np.array([89, 255, 170])
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(frame_rgb)
 
-    mask = cv2.inRange(hsv, lower_red, upper_red)
-    kernel = np.ones((6, 6), np.uint8)
-    mask = cv2.erode(mask, kernel)
+    if result.multi_hand_landmarks:
+        for hand_landmarks in result.multi_hand_landmarks:
+            index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
 
-    contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            cartX = int((index_finger_tip.x) * 800)
 
-    for cnt in contours:
-        area = cv2.contourArea(cnt)
-        approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
-        x = approx.ravel()[0]
-        y = approx.ravel()[1]
-        if area > 500:
-            cv2.drawContours(frame, [cnt], 0, (0, 0, 0), 3)
-            if len(approx) == 4:
-                move = 'left'
-                cv2.putText(frame, "Rectangle", (x, y), cv2.FONT_HERSHEY_PLAIN, 1, 0)
-            elif len(approx) == 3:
-                move = 'right'
-                cv2.putText(frame, "Triangle", (x, y), cv2.FONT_HERSHEY_PLAIN, 1, 0)
-
+            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            
     cv2.imshow("Frame", frame)
     if cv2.waitKey(1) == ord('q'):
         break
@@ -155,33 +117,17 @@ while running:
             if event.key == pg.K_ESCAPE:
                 pause()
 
-    if move == 'right':
-        movementX += 0.2
-        last_dirC = 'right'
-    elif move == 'left':
-        movementX -= 0.2
-        last_dirC = 'left'
-
-    cartX += movementX
     if cartX <= 0:
         cartX = 0
-
     elif cartX >= 736:
         cartX = 736
 
-    if move == 'right':
-        rotated = pg.transform.rotate(cart, 0)
-        window.blit(rotated, (cartX, cartY))
-
-    elif move == 'left':
-        rotated = pg.transform.flip(cart, True, False)
-        window.blit(rotated, (cartX, cartY))
+    window.blit(cart, (cartX, cartY))
 
     planeX += pMovementX
     if planeX <= 0:
         pMovementX = 3
         last_dirP = 'right'
-
     elif planeX >= 736:
         pMovementX = -3
         last_dirP = 'left'
@@ -189,12 +135,11 @@ while running:
     if last_dirP == 'right':
         rotatedP = pg.transform.rotate(plane, 0)
         window.blit(rotatedP, (planeX, planeY))
-
-    elif last_dirP == 'left':
+    else:
         rotatedP = pg.transform.flip(plane, True, False)
         window.blit(rotatedP, (planeX, planeY))
 
-    if status is 'falling':
+    if status == 'falling':
         mangoX = planeX
         mangoY += 2
         window.blit(mango, (mangoX, mangoY))
@@ -208,7 +153,15 @@ while running:
         if life == 0:
             break
 
-    if status2 is 'falling':
+    if collision():
+        mangoY = 0
+        mangoX = planeX
+        status = 'falling'
+        score += 1
+        sound = pg.mixer.Sound('ding.mp3')
+        sound.play()
+
+    if status2 == 'falling':
         mangoX2 = planeX
         mangoY2 += 3
         window.blit(mango, (mangoX2, mangoY2))
@@ -222,29 +175,16 @@ while running:
         if life == 0:
             break
 
-    coll = collision()
-    if coll:
-        mangoY = planeY
-        mangoX = planeX
-        status = 'not falling'
-        score += 1
-        sound = pg.mixer.Sound('ding.mp3')
-        sound.play()
-
-    if status is 'not falling':
-        mangoY += 2
-        window.blit(mango, (mangoX, mangoY))
-
-    coll2 = collision2()
-    if coll2:
-        mangoY2 = planeY
+    if collision2():
+        mangoY2 = 0 
         mangoX2 = planeX
-        status2 = 'not falling'
+        status2 = 'falling'
         score += 1
         sound = pg.mixer.Sound('ding.mp3')
         sound.play()
 
-    if status2 is 'not falling':
+
+    if status2 == 'not falling':
         mangoY2 += 2
         window.blit(mango, (mangoX2, mangoY2))
 
